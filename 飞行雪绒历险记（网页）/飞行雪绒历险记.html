@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>飞行雪绒历险记</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Microsoft YaHei','PingFang SC',sans-serif; color: #eee; user-select: none; }
+  #game-wrapper { position: relative; width: 800px; }
+  canvas { display: block; border: 2px solid #444; border-radius: 8px; background: #0d0d2b; }
+  #selection-panel { position: absolute; top: 0; left: 0; width: 800px; height: 600px; background: rgba(13,13,43,0.95); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 16px; padding: 20px; border: 2px solid #5a5aff; }
+  #selection-panel h1 { font-size: 32px; color: #aaccff; text-shadow: 0 0 20px rgba(100,150,255,0.6); letter-spacing: 4px; }
+  #selection-panel .subtitle { font-size: 14px; color: #8899bb; margin-top: -8px; }
+  #character-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; min-height: 90px; max-width: 650px; padding: 8px; border: 1px dashed #555; border-radius: 8px; background: rgba(255,255,255,0.03); }
+  #character-grid .placeholder-text { color: #667; font-size: 13px; align-self: center; width: 100%; text-align: center; }
+  .char-thumb { width: 72px; height: 72px; object-fit: contain; border: 3px solid transparent; border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.05); transition: border-color 0.2s,transform 0.15s; }
+  .char-thumb:hover { transform: scale(1.08); border-color: #888; }
+  .char-thumb.selected { border-color: #ffcc00; box-shadow: 0 0 12px rgba(255,200,0,0.5); }
+  .btn { padding: 10px 28px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; font-family: inherit; letter-spacing: 2px; transition: background 0.2s,transform 0.1s; }
+  .btn:active { transform: scale(0.96); }
+  .btn-primary { background: #4466cc; color: #fff; } .btn-primary:hover { background: #5588ee; }
+  .btn-success { background: #33aa55; color: #fff; font-size: 18px; padding: 12px 48px; } .btn-success:hover { background: #44cc66; }
+  .btn-secondary { background: #555; color: #ccc; font-size: 13px; padding: 6px 16px; } .btn-secondary:hover { background: #666; }
+  #hint-text { font-size: 13px; color: #889; text-align: center; line-height: 1.6; max-width: 550px; }
+  #file-input { display: none; }
+  #selected-info { font-size: 14px; color: #ffcc00; min-height: 20px; }
+
+  /* ===== 规则弹窗 ===== */
+  #rules-overlay {
+    position: absolute; top: 0; left: 0; width: 800px; height: 600px;
+    background: rgba(10, 10, 30, 0.97); border-radius: 8px;
+    display: none; flex-direction: column; align-items: center;
+    z-index: 20; padding: 30px 40px; overflow-y: auto;
+    border: 2px solid #aa88ff;
+  }
+  #rules-overlay h2 { color: #ccaaff; font-size: 24px; margin-bottom: 16px; letter-spacing: 3px; }
+  #rules-overlay .rule-section { width: 100%; margin-bottom: 14px; }
+  #rules-overlay .rule-section h3 { color: #ffcc88; font-size: 15px; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; }
+  #rules-overlay .rule-section p { color: #bbc; font-size: 13px; line-height: 1.7; }
+  #rules-overlay .rule-section .key { display: inline-block; background: #334; color: #ffcc00; padding: 1px 7px; border-radius: 3px; font-size: 12px; margin: 0 2px; }
+  #rules-overlay .rule-section .mystery { color: #ff88cc; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <canvas id="game-canvas" width="800" height="600"></canvas>
+  <div id="selection-panel">
+    <h1>飞行雪绒历险记</h1>
+    <div class="subtitle">~ 躲避弹幕，冲向终点 ~</div>
+    <div style="display:flex; gap:12px; align-items:center;">
+      <button class="btn btn-primary" id="btn-load-chars">📁 追加角色图</button>
+      <button class="btn btn-secondary" id="btn-clear-chars">清空追加角色</button>
+    </div>
+    <div id="character-grid">
+      <div class="placeholder-text">正在从 ./character/ 文件夹加载角色图片…</div>
+    </div>
+    <div id="selected-info"></div>
+    <button class="btn btn-success" id="btn-start">开 始 游 戏</button>
+    <button class="btn btn-secondary" id="btn-rules" style="margin-top:-8px;">📋 游戏规则</button>
+    <div id="hint-text">
+      💡 角色图从 ./character/ 文件夹加载，也可手动追加<br>
+      操作：WASD/方向键 移动 | <b>空格</b> 大招 | <b>E</b> 减速弹幕 | <b>Q</b> 消耗积分回血 | R 重置<br>
+      惯性移动：松手后保持运动，按键向指定方向加速
+    </div>
+  </div>
+
+  <!-- 规则弹窗 -->
+  <div id="rules-overlay">
+    <h2>📋 游戏规则</h2>
+    <div class="rule-section">
+      <h3>🎮 基本操作</h3>
+      <p><span class="key">W A S D</span> / <span class="key">方向键</span> 惯性移动（松手保持运动，按键向指定方向匀加速，0→最高速 1 秒）</p>
+      <p><span class="key">空格</span> 大招：全屏清弹幕 + 积分 +10，冷却 5s</p>
+      <p><span class="key">Q</span> 消耗 10 积分，随机回复 20~50 HP，冷却 5s</p>
+      <p><span class="key">E</span> 长按减速弹幕 70% + 减速计时，每秒 -1 积分</p>
+      <p><span class="key">F</span> 最终得分 ≥ 500 时召唤传送门，靠近后按 F 结算</p>
+      <p><span class="key">ESC</span> 暂停 / 继续 &nbsp; <span class="key">R</span> 重置</p>
+    </div>
+    <div class="rule-section">
+      <h3>❤️ 生命 & 计时</h3>
+      <p>100 点生命值，受伤扣除弹幕上标注的伤害值（0~10），归零失败</p>
+      <p>180 秒倒计时，归零存活成功</p>
+      <p>受伤后 1 秒无敌闪烁；每受伤 1 HP 弹幕上限 +1</p>
+    </div>
+    <div class="rule-section">
+      <h3>🔴 弹幕</h3>
+      <p>红/黄/蓝/紫/粉 空心环形，红色数字标注伤害，边界反弹并加速 5%</p>
+      <p>基础上限 25 颗；E 技能减速 70%；大招期间暂停生成</p>
+    </div>
+    <div class="rule-section">
+      <h3>🟢 积分球</h3>
+      <p>绿色实心圆球，每球 1~10 分（越大分越高），触碰收集</p>
+      <p>场上总分保持 50~100，总球数 8~20，吃一个生成 0~2 个新球</p>
+    </div>
+    <div class="rule-section">
+      <h3>🏆 结算</h3>
+      <p>最终得分 = 积分 × 剩余 HP 百分比</p>
+      <p>≥ 500：历险成功，带着飞行雪绒跑出来了</p>
+      <p class="mystery">≥ 1005：神秘小彩蛋 ✨</p>
+    </div>
+    <button class="btn btn-primary" id="btn-rules-close" style="margin-top:10px;">关 闭</button>
+  </div>
+
+  <input type="file" id="file-input" accept="image/png,image/jpg,image/jpeg" multiple>
+</div>
+
+<script>
+// ============================================================================
+//  《飞行雪绒历险记》
+// ============================================================================
+
+// ============================================================================
+//  ★ 大招效果图数组 — ./skill_character/
+// ============================================================================
+const SKILL_IMAGE_PATHS = [
+  './skill_character/大招效果图1.png',
+  './skill_character/大招效果图2.png',
+  './skill_character/大招效果图3.png',
+  './skill_character/大招效果图4.png',
+  './skill_character/大招效果图5.png',
+];
+
+// ============================================================================
+//  ★ 角色图片数组 — ./character/，直接修改即可
+// ============================================================================
+const CHARACTER_IMAGE_PATHS = [
+  './character/角色1.png',
+  './character/角色2.png',
+];
+
+// ============================================================================
+//  DOM
+// ============================================================================
+const canvas    = document.getElementById('game-canvas');
+const ctx       = canvas.getContext('2d');
+const selPanel  = document.getElementById('selection-panel');
+const charGrid  = document.getElementById('character-grid');
+const fileInput = document.getElementById('file-input');
+const btnLoad   = document.getElementById('btn-load-chars');
+const btnClear  = document.getElementById('btn-clear-chars');
+const btnStart  = document.getElementById('btn-start');
+const selInfo   = document.getElementById('selected-info');
+const rulesOverlay = document.getElementById('rules-overlay');
+const btnRules     = document.getElementById('btn-rules');
+const btnRulesClose = document.getElementById('btn-rules-close');
+
+// ============================================================================
+//  全局变量
+// ============================================================================
+
+// --- 角色图片 ---
+let characterImages = [];
+let selectedCharIndex = -1;
+
+// --- 大招图片缓存 ---
+let skillImageCache = [];
+
+// --- 游戏状态 ---
+const STATE = { SELECTION: 'selection', PLAYING: 'playing', WIN: 'win', LOSE: 'lose' };
+let gameState   = STATE.SELECTION;
+let animFrameId = null;
+let paused      = false;   // ESC 暂停
+
+// --- 传送门（最终得分≥500 时可用 F 召唤） ---
+let doorOpen    = false;   // 门是否已召唤
+let doorX = 0, doorY = 0, doorW = 90, doorH = 130; // 门的位置和大小
+
+// --- 玩家 ---
+let player = null;
+
+// --- 弹幕 ---
+let bullets        = [];
+let bulletTimer    = 0;
+let bulletInterval = 0.9;
+const BASE_MAX_BULLETS = 25; // 基础弹幕上限，随受伤增加
+
+// --- 弹幕伤害映射 ---
+let bulletDamageMap = {};
+
+// --- 大招（空格） ---
+let skillCooldown     = 0;
+const SKILL_COOLDOWN  = 5;
+let skillActive       = false;
+let skillActiveTimer  = 0;
+const SKILL_DURATION  = 1.0;
+const SKILL_FADE_TIME = 0.2;
+const SKILL_IMG_SCALE = 0.45;
+let currentSkillImage = null;
+let skillImageW       = 0;
+let skillImageH       = 0;
+let skillReadyPulse   = 0;
+
+// --- Q 技能 ---
+let qSkillCooldown  = 0;
+const Q_COOLDOWN    = 5;
+const Q_HEAL_COST   = 10;
+const Q_HEAL_MIN = 20;   // 随机回复 20~50 HP
+const Q_HEAL_MAX = 50;
+
+// --- E 技能：减速弹幕 ---
+let eSkillActive    = false;
+let eSkillCostTimer = 0;
+const E_BULLET_SLOW = 0.3;
+const E_COST_PER_SEC = 1;
+
+// --- 无敌 ---
+let invincibleTimer = 0;
+const INVINCIBLE_DURATION = 1.0;
+
+// --- 分数 & 计时 ---
+let score = 0;
+let gameTimer = 180;         // 总游戏时间 180 秒
+const GAME_DURATION = 180;
+
+// --- 键盘 ---
+const keys = {};
+
+// --- 时间 ---
+let lastTime = 0;
+
+// ============================================================================
+//  大招效果图
+// ============================================================================
+function drawSkillFallback(ctx, w, h) {
+  const g = ctx.createRadialGradient(w/2, h/2, 50, w/2, h/2, 500);
+  g.addColorStop(0, 'rgba(255,255,200,0.9)'); g.addColorStop(0.3, 'rgba(255,200,100,0.7)');
+  g.addColorStop(0.6, 'rgba(200,100,255,0.4)'); g.addColorStop(1, 'rgba(50,50,150,0.1)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  ctx.save(); ctx.translate(w/2, h/2);
+  for (let i=0; i<24; i++) {
+    const a = (i/24)*Math.PI*2, len = 200+Math.random()*250;
+    ctx.strokeStyle = `rgba(255,255,255,${0.3+Math.random()*0.4})`;
+    ctx.lineWidth = 2+Math.random()*4;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*len, Math.sin(a)*len); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function preloadSkillImages() {
+  skillImageCache = SKILL_IMAGE_PATHS.map(p => { const i=new Image(); i.src=p; return {img:i,loaded:false,path:p}; });
+  skillImageCache.forEach((e,i) => { e.img.onload=()=>{e.loaded=true}; e.img.onerror=()=>{}; });
+}
+function getRandomSkillImage() {
+  const l=skillImageCache.filter(e=>e.loaded);
+  return l.length>0 ? l[Math.floor(Math.random()*l.length)].img : null;
+}
+
+// ============================================================================
+//  角色图片加载
+// ============================================================================
+function preloadCharacterImages() {
+  let done=0; const t=CHARACTER_IMAGE_PATHS.length;
+  if (t===0) { renderCharacterGrid(); return; }
+  CHARACTER_IMAGE_PATHS.forEach(p => {
+    const img=new Image();
+    img.onload=()=>{ characterImages.push({img,name:p.split('/').pop(),url:p,fromFolder:true}); done++; if(done===t) renderCharacterGrid(); };
+    img.onerror=()=>{ done++; if(done===t) renderCharacterGrid(); };
+    img.src=p;
+  });
+}
+function handleFileSelect(e) {
+  const files=Array.from(e.target.files); if(files.length===0) return;
+  let done=0;
+  files.forEach(f => {
+    const url=URL.createObjectURL(f), img=new Image();
+    img.onload=()=>{ characterImages.push({img,name:f.name,url,fromFolder:false}); done++; if(done===files.length) renderCharacterGrid(); };
+    img.onerror=()=>{ done++; if(done===files.length) renderCharacterGrid(); };
+    img.src=url;
+  });
+  fileInput.value='';
+}
+function clearManualCharacters() {
+  characterImages.forEach(c=>{if(!c.fromFolder)URL.revokeObjectURL(c.url)});
+  characterImages=characterImages.filter(c=>c.fromFolder);
+  if (selectedCharIndex>=characterImages.length) selectedCharIndex=-1;
+  renderCharacterGrid();
+}
+function renderCharacterGrid() {
+  charGrid.querySelectorAll('img.char-thumb,.placeholder-text').forEach(e=>e.remove());
+  if (characterImages.length===0) {
+    const ph=document.createElement('div'); ph.className='placeholder-text';
+    ph.textContent='⚠ 未加载到任何角色图片，请在 CHARACTER_IMAGE_PATHS 中配置或手动追加';
+    charGrid.appendChild(ph);
+  } else {
+    // 自动选中第一个角色
+    if (selectedCharIndex<0) selectedCharIndex=0;
+    characterImages.forEach((entry,idx) => {
+      const thumb=document.createElement('img'); thumb.className='char-thumb';
+      if (idx===selectedCharIndex) thumb.classList.add('selected');
+      thumb.src=entry.url; thumb.title=entry.name+(entry.fromFolder?' (文件夹)':' (手动)');
+      thumb.addEventListener('click',()=>selectCharacter(idx));
+      charGrid.appendChild(thumb);
+    });
+  }
+  updateSelectedInfo();
+}
+function selectCharacter(i) {
+  selectedCharIndex=i;
+  charGrid.querySelectorAll('img.char-thumb').forEach((t,idx)=>t.classList.toggle('selected',idx===i));
+  updateSelectedInfo();
+}
+function updateSelectedInfo() {
+  if (selectedCharIndex>=0 && selectedCharIndex<characterImages.length)
+    selInfo.textContent=`✓ 当前选中：${characterImages[selectedCharIndex].name}`;
+  else if (characterImages.length>0)
+    selInfo.textContent='请点击缩略图选择一个角色';
+  else
+    selInfo.textContent='请先加载角色图片';
+}
+
+// ============================================================================
+//  游戏对象
+// ============================================================================
+
+class Player {
+  constructor(charImg) {
+    this.x = 400; this.y = 540;
+    this.width = 38; this.height = 38;
+    this.vx = 0; this.vy = 0;           // 当前速度（惯性）
+    this.speed = 240;                    // 基础速度上限
+    this.maxSpeed = this.speed * 1.5;    // 最高速度为原来的 1.5 倍
+    this.accel = this.maxSpeed / 1.0;    // 0→maxSpeed 匀加速，1 秒完成
+    this.charImg = charImg;
+    this.hp = 100; this.maxHp = 100;
+  }
+
+  update(dt) {
+    // 目标方向
+    let tx = 0, ty = 0;
+    if (keys['a'] || keys['arrowleft'])  tx = -1;
+    if (keys['d'] || keys['arrowright']) tx = 1;
+    if (keys['w'] || keys['arrowup'])    ty = -1;
+    if (keys['s'] || keys['arrowdown'])  ty = 1;
+
+    if (tx !== 0 && ty !== 0) { const inv = 1/Math.SQRT2; tx *= inv; ty *= inv; }
+
+    if (tx !== 0 || ty !== 0) {
+      // 向目标方向匀加速
+      const targetVx = tx * this.maxSpeed;
+      const targetVy = ty * this.maxSpeed;
+      // X 方向
+      const dvx = targetVx - this.vx;
+      const maxStep = this.accel * dt;
+      if (Math.abs(dvx) <= maxStep) this.vx = targetVx;
+      else this.vx += Math.sign(dvx) * maxStep;
+      // Y 方向
+      const dvy = targetVy - this.vy;
+      if (Math.abs(dvy) <= maxStep) this.vy = targetVy;
+      else this.vy += Math.sign(dvy) * maxStep;
+    }
+    // 无按键时：惯性保持当前速度不变（不施加摩擦力）
+
+    // 应用速度
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // 边界碰撞：碰到边界速度归零
+    const hw = this.width/2, hh = this.height/2;
+    if (this.x - hw < 0)      { this.x = hw;      this.vx = 0; }
+    if (this.x + hw > 800)    { this.x = 800 - hw; this.vx = 0; }
+    if (this.y - hh < 0)      { this.y = hh;       this.vy = 0; }
+    if (this.y + hh > 600)    { this.y = 600 - hh; this.vy = 0; }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    if (invincibleTimer > 0) ctx.globalAlpha = (Math.floor(invincibleTimer*10)%2===0) ? 0.35 : 1.0;
+    const cx=this.x, cy=this.y;
+    if (this.charImg) {
+      const s=Math.min(this.width/this.charImg.width, this.height/this.charImg.height);
+      ctx.drawImage(this.charImg, cx-this.charImg.width*s/2, cy-this.charImg.height*s/2, this.charImg.width*s, this.charImg.height*s);
+    }
+    ctx.restore();
+  }
+
+  get collisionRadius() { return this.width * 0.35; }
+}
+
+// ============================================================================
+//  弹幕
+// ============================================================================
+// 弹幕颜色：红、黄、蓝、紫、粉
+const BULLET_COLORS = ['#ff3333','#ffdd00','#3388ff','#aa44ff','#ff66aa'];
+
+function randomizeBulletDamage() {
+  bulletDamageMap = {};
+  BULLET_COLORS.forEach(c => { bulletDamageMap[c] = Math.floor(Math.random()*11); });
+}
+
+class Bullet {
+  constructor(x,y,vx,vy,type,color,size) {
+    this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.type=type; this.color=color; this.size=size;
+    this.alive=true;
+    this.damage=bulletDamageMap[color]!==undefined ? bulletDamageMap[color] : 5;
+  }
+
+  update(dt) {
+    this.x+=this.vx*dt; this.y+=this.vy*dt;
+    const r=this.size;
+    if (this.x-r<0)   { this.x=r;      this.vx=Math.abs(this.vx)*1.05; }
+    if (this.x+r>800) { this.x=800-r;  this.vx=-Math.abs(this.vx)*1.05; }
+    if (this.y-r<0)   { this.y=r;      this.vy=Math.abs(this.vy)*1.05; }
+    if (this.y+r>600) { this.y=600-r;  this.vy=-Math.abs(this.vy)*1.05; }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.strokeStyle=this.color; ctx.lineWidth=2.5;
+    ctx.shadowColor=this.color; ctx.shadowBlur=6;
+    if (this.type==='circle') {
+      ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(this.x,this.y-this.size); ctx.lineTo(this.x+this.size,this.y);
+      ctx.lineTo(this.x,this.y+this.size); ctx.lineTo(this.x-this.size,this.y); ctx.closePath(); ctx.stroke();
+    }
+    ctx.shadowBlur=0; ctx.fillStyle='#ff3333'; ctx.font='bold 12px "Microsoft YaHei"';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(this.damage, this.x, this.y);
+    ctx.restore();
+  }
+}
+
+// ============================================================================
+//  积分球 — 绿色实心圆，场上总分之和保持 25~50
+// ============================================================================
+let scoreOrbs = [];
+const ORB_SUM_MIN  = 50;   // 场上总分下限
+const ORB_SUM_MAX  = 100;  // 场上总分上限
+const ORB_COUNT_MIN = 8;   // 场上球数下限
+const ORB_COUNT_MAX = 20;  // 场上球数上限
+const ORB_MIN_R = 9.5;     // 角色 38px 的 50% → 半径 9.5
+const ORB_MAX_R = 17;      // 角色 38px 的 90% → 半径 17
+
+class ScoreOrb {
+  constructor(x, y, value) {
+    this.x = x; this.y = y;
+    this.value = value;
+    this.radius = ORB_MIN_R + (value - 1) / 9 * (ORB_MAX_R - ORB_MIN_R);
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.fillStyle = '#44ee44';
+    ctx.shadowColor = '#44ff44';
+    ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(this.radius * 0.8)}px "Microsoft YaHei"`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(this.value, this.x, this.y);
+    ctx.restore();
+  }
+}
+
+/** 场上所有球的总分 */
+function orbTotalSum() { return scoreOrbs.reduce((s, o) => s + o.value, 0); }
+
+/** 生成若干个积分球，使总分及数量均在规定范围内 */
+function spawnScoreOrbs(count) {
+  const margin = 30;
+  for (let i = 0; i < count; i++) {
+    if (scoreOrbs.length >= ORB_COUNT_MAX) break;
+    let remaining = ORB_SUM_MAX - orbTotalSum();
+    if (remaining <= 0) break;
+    const maxVal = Math.min(10, remaining);
+    const minVal = Math.max(1, ORB_SUM_MIN - orbTotalSum());
+    if (maxVal < 1) break;
+    const value = minVal + Math.floor(Math.random() * (maxVal - minVal + 1));
+    const x = margin + Math.random() * (800 - margin * 2);
+    const y = margin + Math.random() * (600 - margin * 2);
+    scoreOrbs.push(new ScoreOrb(x, y, value));
+  }
+}
+
+/** 初始化场上积分球，总分 50~100，数量 8~20 */
+function initScoreOrbs() {
+  scoreOrbs = [];
+  const targetSum = ORB_SUM_MIN + Math.floor(Math.random() * (ORB_SUM_MAX - ORB_SUM_MIN + 1));
+  const targetCount = ORB_COUNT_MIN + Math.floor(Math.random() * (ORB_COUNT_MAX - ORB_COUNT_MIN + 1));
+  // 平均每球分值
+  const avg = targetSum / targetCount;
+  for (let i = 0; i < targetCount; i++) {
+    const remaining = targetSum - orbTotalSum();
+    const left = targetCount - i;
+    // 确保每球在 1~10，且总和能达到目标
+    const maxV = Math.min(10, remaining - (left - 1) * 1);
+    const minV = Math.max(1, remaining - (left - 1) * 10);
+    const value = minV + Math.floor(Math.random() * (maxV - minV + 1));
+    const margin = 30;
+    const x = margin + Math.random() * (800 - margin * 2);
+    const y = margin + Math.random() * (600 - margin * 2);
+    scoreOrbs.push(new ScoreOrb(x, y, value));
+  }
+}
+
+// ============================================================================
+//  弹幕生成
+// ============================================================================
+function createBullet(x,y,vx,vy,color,type,size) { return new Bullet(x,y,vx,vy,type||'circle',color,size||5); }
+
+function spawnPair(color,type) {
+  const b=[], h=Math.random()<0.5, sp=50+Math.random()*40, spd=90+Math.random()*60, sz=9+Math.random()*5;
+  let x1,y1,x2,y2,vx,vy;
+  if(h){y1=y2=Math.random()<0.5?-20:620; vy=y1<0?spd:-spd; x1=200+Math.random()*300; x2=x1+sp; vx=(Math.random()-.5)*20;}
+  else{x1=x2=Math.random()<0.5?-20:820; vx=x1<0?spd:-spd; y1=150+Math.random()*300; y2=y1+sp; vy=(Math.random()-.5)*20;}
+  b.push(createBullet(x1,y1,vx,vy,color,type,sz)); b.push(createBullet(x2,y2,vx,vy,color,type,sz)); bullets.push(...b);
+}
+function spawnTriangle(color,type) {
+  const b=[], cx=250+Math.random()*300, cy=150+Math.random()*300, sp=45+Math.random()*30, spd=75+Math.random()*50, sz=8+Math.random()*5;
+  [0,120,240].map(d=>d*Math.PI/180+Math.random()*.5).forEach(a=>{
+    b.push(createBullet(cx+Math.cos(a)*sp,cy+Math.sin(a)*sp,Math.cos(a)*spd,Math.sin(a)*spd,color,type,sz));
+  });
+  bullets.push(...b);
+}
+function spawnDiagonal(color,type) {
+  const b=[], n=2+Math.floor(Math.random()*2), ft=Math.random()<0.5, fl=Math.random()<0.5, sp=45+Math.random()*35, spd=90+Math.random()*50, sz=9+Math.random()*5;
+  const sx=fl?-20:820, sy=ft?-20:620, dx=fl?1:-1, dy=ft?1:-1;
+  for(let i=0;i<n;i++) b.push(createBullet(sx+dx*i*sp,sy+dy*i*sp,dx*spd,dy*spd,color,type,sz));
+  bullets.push(...b);
+}
+function spawnTrackingPair(color,type) {
+  const b=[], sz=9+Math.random()*5, spd=85+Math.random()*50;
+  const e=[{x:-20,y:100+Math.random()*400},{x:820,y:100+Math.random()*400}];
+  if(Math.random()<0.5){e[0]={x:100+Math.random()*600,y:-20};e[1]={x:100+Math.random()*600,y:620};}
+  e.forEach(ed=>{const a=Math.atan2(player.y-ed.y,player.x-ed.x)+(Math.random()-.5)*.4; b.push(createBullet(ed.x,ed.y,Math.cos(a)*spd,Math.sin(a)*spd,color,type,sz));});
+  bullets.push(...b);
+}
+function spawnShortLine(color,type) {
+  const b=[], ft=Math.random()<0.5, y=ft?-20:620, vy=(ft?1:-1)*(90+Math.random()*50), sx=200+Math.random()*300, sz=9+Math.random()*5;
+  for(let i=0;i<3;i++) b.push(createBullet(sx+i*50,y,(Math.random()-.5)*20,vy,color,type,sz));
+  bullets.push(...b);
+}
+const BULLET_PATTERNS=[spawnPair,spawnTriangle,spawnDiagonal,spawnTrackingPair,spawnShortLine];
+
+function spawnBullets() {
+  const cap = BASE_MAX_BULLETS + (player ? (player.maxHp - player.hp) : 0);
+  if (bullets.length >= cap) return;
+  const fn=BULLET_PATTERNS[Math.floor(Math.random()*BULLET_PATTERNS.length)];
+  fn(BULLET_COLORS[Math.floor(Math.random()*BULLET_COLORS.length)], Math.random()<0.4?'diamond':'circle');
+}
+
+/** 实时最终得分 = 积分 × 血量百分比（不显示，仅供判断） */
+function getFinalScore() {
+  if (!player) return 0;
+  return Math.floor(score * (player.hp / player.maxHp));
+}
+
+// ============================================================================
+//  碰撞 & 技能
+// ============================================================================
+function checkCollision(b,p) {
+  const dx=b.x-p.x, dy=b.y-p.y;
+  return Math.sqrt(dx*dx+dy*dy) < (b.size + p.collisionRadius);
+}
+function triggerUltimate() {
+  if (skillCooldown>0||skillActive) return;
+  if (gameState!==STATE.PLAYING) return;
+  currentSkillImage=getRandomSkillImage();
+  if(currentSkillImage){skillImageH=600*SKILL_IMG_SCALE; skillImageW=(currentSkillImage.width/currentSkillImage.height)*skillImageH;}
+  skillActive=true; skillActiveTimer=SKILL_DURATION; bullets=[]; score+=10; skillCooldown=SKILL_COOLDOWN;
+}
+function triggerQSkill() {
+  if(qSkillCooldown>0||gameState!==STATE.PLAYING) return;
+  if(score<Q_HEAL_COST||player.hp>=player.maxHp) return;
+  score-=Q_HEAL_COST;
+  const heal = Q_HEAL_MIN + Math.floor(Math.random() * (Q_HEAL_MAX - Q_HEAL_MIN + 1));
+  player.hp=Math.min(player.maxHp,player.hp+heal);
+  qSkillCooldown=Q_COOLDOWN;
+}
+
+// ============================================================================
+//  重置 & 开始
+// ============================================================================
+function resetGame() {
+  if(animFrameId){cancelAnimationFrame(animFrameId);animFrameId=null;}
+  gameState=STATE.SELECTION; bullets=[]; scoreOrbs=[]; bulletTimer=0; bulletInterval=0.9;
+  skillCooldown=0; skillActive=false; skillActiveTimer=0; currentSkillImage=null;
+  invincibleTimer=0; skillReadyPulse=0; score=0; gameTimer=GAME_DURATION; player=null;
+  qSkillCooldown=0; eSkillActive=false; eSkillCostTimer=0; bulletDamageMap={};
+  paused=false; doorOpen=false;
+  for(const k in keys) delete keys[k];
+  selPanel.style.display='flex'; ctx.clearRect(0,0,800,600);
+}
+function startGame() {
+  if (characterImages.length===0) { alert('请先加载角色图片！在 CHARACTER_IMAGE_PATHS 中配置文件路径。'); return; }
+  if (selectedCharIndex<0) { alert('请先点击选择一个角色！'); return; }
+  selPanel.style.display='none';
+  randomizeBulletDamage();
+  gameState=STATE.PLAYING; player=new Player(characterImages[selectedCharIndex].img);
+  bullets=[]; bulletTimer=0; bulletInterval=0.9;
+  skillCooldown=0; skillActive=false; skillActiveTimer=0; currentSkillImage=null;
+  invincibleTimer=0; skillReadyPulse=0; score=0; gameTimer=GAME_DURATION;
+  qSkillCooldown=0; eSkillActive=false; eSkillCostTimer=0;
+  paused=false; doorOpen=false;
+  initScoreOrbs();
+  for(const k in keys) delete keys[k];
+  lastTime=performance.now(); animFrameId=requestAnimationFrame(gameLoop);
+}
+
+// ============================================================================
+//  主循环
+// ============================================================================
+function gameLoop(ts) {
+  if(gameState!==STATE.PLAYING&&gameState!==STATE.WIN&&gameState!==STATE.LOSE) return;
+  const dt=Math.min((ts-lastTime)/1000, 0.1); lastTime=ts;
+  if (!paused) update(dt);
+  render();
+  animFrameId=requestAnimationFrame(gameLoop);
+}
+
+function update(dt) {
+  player.update(dt);
+
+  // --- 游戏计时（E 减速时同步减速计时） ---
+  if (gameState===STATE.PLAYING) {
+    const timerDt = eSkillActive ? dt * E_BULLET_SLOW : dt;
+    gameTimer -= timerDt;
+    if (gameTimer <= 0) { gameTimer = 0; gameState = STATE.WIN; return; }
+  }
+
+  // --- E 技能：减速弹幕时每秒 -1 积分 ---
+  if (eSkillActive) {
+    eSkillCostTimer += dt;
+    while (eSkillCostTimer >= 1.0) { eSkillCostTimer -= 1.0; score = Math.max(0, score - E_COST_PER_SEC); }
+  }
+
+  // --- Q 冷却 ---
+  if (qSkillCooldown>0) { qSkillCooldown-=dt; if(qSkillCooldown<0)qSkillCooldown=0; }
+
+  // --- 积分球补充（总分不足下限时补新球） ---
+  if (orbTotalSum() < ORB_SUM_MIN) { spawnScoreOrbs(1); }
+
+  // --- 弹幕生成（大招期间不生成，游戏结束停止生成） ---
+  if (gameState === STATE.PLAYING && !skillActive) {
+    bulletTimer += dt;
+    const df = Math.max(0.35, 1.0 - (600 - player.y)/600);
+    bulletInterval = 0.9 - df * 0.45;
+    if (bulletTimer >= bulletInterval) { bulletTimer -= bulletInterval; spawnBullets(); }
+  }
+
+  // --- 弹幕更新（游戏结束冻结弹幕，E 减速） ---
+  if (gameState === STATE.PLAYING) {
+    const bdt = eSkillActive ? dt * E_BULLET_SLOW : dt;
+    for (const b of bullets) b.update(bdt);
+  }
+
+  // --- 大招动画 ---
+  if (skillActive) { skillActiveTimer-=dt; if(skillActiveTimer<=0){skillActive=false;skillActiveTimer=0;currentSkillImage=null;} }
+
+  // --- 大招冷却 ---
+  if (skillCooldown>0&&!skillActive) { skillCooldown-=dt; if(skillCooldown<0)skillCooldown=0; }
+
+  skillReadyPulse += dt;
+
+  // --- 无敌 ---
+  if (invincibleTimer>0) { invincibleTimer-=dt; if(invincibleTimer<0)invincibleTimer=0; }
+
+  // --- 碰撞 ---
+  if (invincibleTimer<=0) {
+    for (const b of bullets) {
+      if (!b.alive) continue;
+      if (checkCollision(b, player)) { b.alive=false; player.hp-=b.damage; invincibleTimer=INVINCIBLE_DURATION; break; }
+    }
+    bullets=bullets.filter(b=>b.alive);
+  }
+
+  // --- 积分球拾取（吃掉后生成 1~2 个新球） ---
+  for (let i = scoreOrbs.length - 1; i >= 0; i--) {
+    const orb = scoreOrbs[i];
+    const dx = orb.x - player.x, dy = orb.y - player.y;
+    if (Math.sqrt(dx*dx + dy*dy) < (orb.radius + player.collisionRadius)) {
+      score += orb.value;
+      scoreOrbs.splice(i, 1);
+      spawnScoreOrbs(Math.floor(Math.random() * 3)); // 生成 0~2 个新球
+    }
+  }
+
+  if (player.hp<=0) { player.hp=0; gameState=STATE.LOSE; }
+}
+
+// ============================================================================
+//  渲染
+// ============================================================================
+function render() {
+  ctx.clearRect(0,0,800,600);
+  drawBackground();
+
+  // --- 红色边框（最终得分≥500 时可召唤传送门） ---
+  const fs = getFinalScore();
+  const canDoor = fs >= 500 && gameState === STATE.PLAYING;
+  if (canDoor) {
+    const pulse = 0.5 + 0.5 * Math.sin(skillReadyPulse * 3);
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 30, 30, ${0.5 + pulse * 0.5})`;
+    ctx.lineWidth = 4 + pulse * 2;
+    ctx.shadowColor = 'rgba(255, 0, 0, 0.6)';
+    ctx.shadowBlur = 10;
+    ctx.strokeRect(2, 2, 796, 596);
+    ctx.restore();
+  }
+
+  // --- 紫色传送门 ---
+  if (doorOpen) {
+    doorX = 400 - doorW / 2;
+    doorY = 300 - doorH / 2;
+    // 门框
+    ctx.fillStyle = 'rgba(80, 10, 140, 0.85)';
+    ctx.fillRect(doorX, doorY, doorW, doorH);
+    // 发光边框
+    const gp = 0.5 + 0.5 * Math.sin(skillReadyPulse * 4);
+    ctx.strokeStyle = `rgba(180, 80, 255, ${0.6 + gp * 0.4})`;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = 'rgba(200, 100, 255, 0.8)';
+    ctx.shadowBlur = 15 + gp * 10;
+    ctx.strokeRect(doorX, doorY, doorW, doorH);
+    ctx.shadowBlur = 0;
+    // 门内文字
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 15px "Microsoft YaHei"';
+    ctx.textAlign = 'center';
+    ctx.fillText('传送门', doorX + doorW / 2, doorY + doorH / 2 - 8);
+    ctx.font = '12px "Microsoft YaHei"';
+    ctx.fillText('靠近后按F结算', doorX + doorW / 2, doorY + doorH / 2 + 14);
+    ctx.textAlign = 'start';
+  }
+
+  for(const b of bullets) b.draw(ctx);
+  for(const orb of scoreOrbs) orb.draw(ctx);
+  if(player) player.draw(ctx);
+
+  // --- 大招动画 ---
+  if(skillActive&&skillActiveTimer>0){
+    const p=1-(skillActiveTimer/SKILL_DURATION), iw=skillImageW||400, ih=skillImageH||270;
+    const dy=(600-ih)/2, cx=(800-iw)/2; let curX;
+    if(p<0.25) curX=800+(cx-800)*(p/0.25);
+    else if(p<0.75) curX=cx;
+    else curX=cx+(-iw-cx)*((p-0.75)/0.25);
+    let a=1; const fi=SKILL_FADE_TIME/SKILL_DURATION, fo=1-fi;
+    if(p<fi) a=p/fi; else if(p>fo) a=(1-p)/(1-fo);
+    ctx.save(); ctx.globalAlpha=a;
+    if(currentSkillImage) ctx.drawImage(currentSkillImage,curX,dy,iw,ih);
+    else { ctx.save(); ctx.beginPath(); ctx.rect(curX,dy,iw,ih); ctx.clip(); drawSkillFallback(ctx,800,600); ctx.restore(); }
+    ctx.restore();
+  }
+
+  drawUI();
+
+  // --- 暂停遮罩 ---
+  if (paused && gameState === STATE.PLAYING) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, 0, 800, 600);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 40px "Microsoft YaHei"';
+    ctx.textAlign = 'center';
+    ctx.fillText('⏸ 暂停中', 400, 280);
+    ctx.font = '16px "Microsoft YaHei"';
+    ctx.fillText('按 ESC 继续', 400, 330);
+    ctx.textAlign = 'start';
+  }
+
+  // --- 结算画面（仅在游戏结束时显示） ---
+  if (gameState === STATE.WIN || gameState === STATE.LOSE) {
+    const hpRatio = player ? player.hp / player.maxHp : 0;
+    const finalScore = Math.floor(score * hpRatio);
+    let endTitle, endSub;
+    if (finalScore > 1005) {
+      endTitle = '宝宝我想你了';
+      endSub = `最终得分: ${finalScore}  ♥`;
+    } else if (finalScore >= 500) {
+      endTitle = '历险成功，带着飞行雪绒跑出来了';
+      endSub = `最终得分: ${finalScore}`;
+    } else if (gameState === STATE.WIN) {
+      endTitle = '⏰ 时间到！';
+      endSub = `你活下来了！最终得分: ${finalScore}`;
+    } else {
+      endTitle = '💔 阵 亡';
+      endSub = `生命值归零  最终得分: ${finalScore}`;
+    }
+    drawOverlay(endTitle, endSub, finalScore > 1005 ? '#ff88cc' : (finalScore >= 500 ? '#ffdd44' : (gameState===STATE.WIN ? '#ffdd44' : '#ff4444')));
+  }
+}
+
+function drawBackground() {
+  const g=ctx.createLinearGradient(0,0,0,600);
+  g.addColorStop(0,'#0a0a2e'); g.addColorStop(0.5,'#12123a'); g.addColorStop(1,'#1a1a3e');
+  ctx.fillStyle=g; ctx.fillRect(0,0,800,600);
+  ctx.fillStyle='#fff';
+  for(let i=0;i<80;i++){const sx=((i*137+42*53)%800),sy=((i*251+42*97)%600),sr=((i*73+42*31)%10)/10+.5; ctx.globalAlpha=((i*41+42*17)%60)/100+.3; ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);ctx.fill();}
+  ctx.globalAlpha=1;
+}
+
+function drawUI() {
+  const hp=player?player.hp:100, maxHp=player?player.maxHp:100;
+  const skillReady=(skillCooldown<=0&&!skillActive);
+  const cap=BASE_MAX_BULLETS+(player?(player.maxHp-player.hp):0);
+
+  // --- 大招就绪流光 ---
+  if(skillReady){const pu=0.5+0.5*Math.sin(skillReadyPulse*4),ps=0.5+0.5*Math.sin(skillReadyPulse*2.5);
+    ctx.save();ctx.strokeStyle=`rgba(255,200,40,${0.25+pu*0.35})`;ctx.lineWidth=5+ps*4;
+    ctx.shadowColor=`rgba(255,200,40,${0.45+pu*0.2})`;ctx.shadowBlur=12+pu*10;
+    ctx.strokeRect(ctx.lineWidth/2,ctx.lineWidth/2,800-ctx.lineWidth,600-ctx.lineWidth);ctx.restore();
+    if(player)for(let i=0;i<8;i++){const a=(i/8)*Math.PI*2+skillReadyPulse*1.5,r=38+Math.sin(skillReadyPulse*6+i)*8;
+      ctx.fillStyle=`rgba(255,220,60,${0.5+0.5*Math.sin(skillReadyPulse*5+i*2)})`;
+      ctx.beginPath();ctx.arc(player.x+Math.cos(a)*r,player.y+Math.sin(a)*r,3,0,Math.PI*2);ctx.fill();}
+  }
+
+  // --- 生命值条 ---
+  const bx=14,by=12,bw=180,bh=14,hr=hp/maxHp;
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(bx,by,bw,bh);
+  let hc; if(hr>0.5)hc=`rgb(${Math.floor(255*(1-hr)*2)},220,60)`; else hc=`rgb(255,${Math.floor(220*hr*2)},60)`;
+  ctx.fillStyle=hc;ctx.fillRect(bx,by,bw*hr,bh);
+  ctx.strokeStyle='#888';ctx.lineWidth=1;ctx.strokeRect(bx,by,bw,bh);
+  ctx.fillStyle='#fff';ctx.font='bold 11px "Microsoft YaHei"';ctx.textAlign='center';
+  ctx.fillText(`${hp}/${maxHp}`,bx+bw/2,by+bh-2);ctx.textAlign='start';
+
+  // --- 分数 ---
+  ctx.fillStyle='#fff';ctx.font='bold 15px "Microsoft YaHei"';ctx.fillText(`⭐ ${Math.floor(score)}`,16,50);
+
+  // --- E 技能状态 ---
+  if(eSkillActive){ctx.fillStyle='#66ddff';ctx.font='bold 13px "Microsoft YaHei"';ctx.fillText('🐢 弹幕&计时减速中（积分停止增长，每秒-1）',16,70);}
+
+  // --- 弹幕上限 ---
+  ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font='11px "Microsoft YaHei"';ctx.fillText(`弹幕: ${bullets.length}/${cap}`,16,86);
+
+  // --- 传送门提示 ---
+  const fs2 = getFinalScore();
+  if (fs2 >= 500 && gameState === STATE.PLAYING && !doorOpen) {
+    const pulse = 0.5 + 0.5 * Math.sin(skillReadyPulse * 5);
+    ctx.fillStyle = `rgba(255, 180, 255, ${0.7 + pulse * 0.3})`;
+    ctx.font = `bold ${Math.round(14 + pulse * 2)}px "Microsoft YaHei"`;
+    ctx.fillText('🔮 按 F 召唤传送门', 16, 104);
+  } else if (doorOpen && gameState === STATE.PLAYING) {
+    ctx.fillStyle = '#ddaaff';
+    ctx.font = 'bold 13px "Microsoft YaHei"';
+    ctx.fillText('🚪 移动到紫色门处，按 F 结算', 16, 104);
+  }
+
+  // --- 游戏倒计时（上部居中） ---
+  const min=Math.floor(gameTimer/60), sec=Math.floor(gameTimer%60);
+  const timeStr=`${min}:${sec.toString().padStart(2,'0')}`;
+  ctx.fillStyle=gameTimer<30?'#ff5555':'#ffffff';ctx.font='bold 22px "Microsoft YaHei"';ctx.textAlign='center';
+  ctx.fillText(`⏱ ${timeStr}`,400,28);ctx.textAlign='start';
+
+  // --- 技能状态（右上） ---
+  ctx.textAlign='end';
+  if(skillReady){const s=1.0+0.08*Math.sin(skillReadyPulse*5);ctx.save();
+    ctx.font=`bold ${Math.round(15*s)}px "Microsoft YaHei"`;ctx.fillStyle='#ffcc00';ctx.shadowColor='#ffaa00';
+    ctx.shadowBlur=8+4*Math.sin(skillReadyPulse*6);ctx.fillText('空格 大招就绪！',784,22);ctx.restore();}
+  else{const pr=1-(skillCooldown/SKILL_COOLDOWN);ctx.fillStyle='#888';ctx.font='13px "Microsoft YaHei"';
+    ctx.fillText(`空格 冷却 ${skillCooldown.toFixed(1)}s`,784,22);
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(670,28,114,4);ctx.fillStyle='#ffaa00';ctx.fillRect(670,28,114*pr,4);}
+
+  if(qSkillCooldown>0){ctx.fillStyle='#888';ctx.font='13px "Microsoft YaHei"';ctx.fillText(`Q 回血冷却 ${qSkillCooldown.toFixed(1)}s`,784,48);}
+  else{ctx.fillStyle='#88ff88';ctx.font='13px "Microsoft YaHei"';ctx.fillText(`Q 消耗${Q_HEAL_COST}分 回${Q_HEAL_MIN}~${Q_HEAL_MAX}血`,784,48);}
+
+  if(eSkillActive){ctx.fillStyle='#66ddff';ctx.font='bold 13px "Microsoft YaHei"';ctx.fillText('E 减速中…',784,68);}
+  else{ctx.fillStyle='#aaddff';ctx.font='13px "Microsoft YaHei"';ctx.fillText('E 长按减速70%（每秒-1分）',784,68);}
+  ctx.textAlign='start';
+}
+
+function drawOverlay(title,subtitle,color) {
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,800,600);
+  ctx.fillStyle=color;ctx.font='bold 44px "Microsoft YaHei"';ctx.textAlign='center';ctx.fillText(title,400,250);
+  ctx.fillStyle='#fff';ctx.font='16px "Microsoft YaHei"';ctx.fillText(subtitle,400,310);
+  ctx.fillStyle='#ccc';ctx.font='15px "Microsoft YaHei"';ctx.fillText('按 R 键返回选人界面',400,360);ctx.textAlign='start';
+}
+
+// ============================================================================
+//  事件
+// ============================================================================
+window.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase(); keys[k]=true;
+  // ESC 暂停/继续
+  if(k==='escape'&&gameState===STATE.PLAYING){e.preventDefault();paused=!paused;return;}
+  // 暂停时忽略其他游戏按键
+  if(paused&&gameState===STATE.PLAYING) return;
+  if(e.key===' '&&gameState===STATE.PLAYING){e.preventDefault();triggerUltimate();}
+  if(k==='q'&&gameState===STATE.PLAYING){e.preventDefault();triggerQSkill();}
+  if(k==='e'&&gameState===STATE.PLAYING){e.preventDefault();if(!eSkillActive){eSkillActive=true;eSkillCostTimer=0;}}
+  // F 传送门
+  if(k==='f'&&gameState===STATE.PLAYING){
+    e.preventDefault();
+    if(!doorOpen&&getFinalScore()>=500){doorOpen=true;}
+    else if(doorOpen&&player){
+      const dx=player.x-(doorX+doorW/2),dy=player.y-(doorY+doorH/2);
+      if(Math.sqrt(dx*dx+dy*dy)<60){gameState=STATE.WIN;}
+    }
+  }
+  if(k==='r'){e.preventDefault();resetGame();}
+});
+window.addEventListener('keyup',e=>{const k=e.key.toLowerCase();keys[k]=false;if(k==='e'){eSkillActive=false;eSkillCostTimer=0;}});
+window.addEventListener('keydown',e=>{if(e.key===' ')e.preventDefault();});
+btnLoad.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',handleFileSelect);
+btnClear.addEventListener('click',clearManualCharacters);
+btnStart.addEventListener('click',()=>{if(characterImages.length===0){alert('请先在 CHARACTER_IMAGE_PATHS 中配置角色图片路径！');return;}if(selectedCharIndex<0)selectedCharIndex=0;startGame();});
+btnRules.addEventListener('click',()=>{rulesOverlay.style.display='flex';});
+btnRulesClose.addEventListener('click',()=>{rulesOverlay.style.display='none';});
+rulesOverlay.addEventListener('click',e=>{if(e.target===rulesOverlay)rulesOverlay.style.display='none';});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&rulesOverlay.style.display==='flex'){rulesOverlay.style.display='none';e.stopPropagation();}});
+selPanel.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();btnStart.click();}});
+
+// ============================================================================
+//  初始化
+// ============================================================================
+try {
+  preloadSkillImages();
+  preloadCharacterImages();
+  selPanel.style.display='flex';
+  console.log('✅ 雷霆大雪绒 初始化完成');
+} catch(e) {
+  console.error('初始化失败:', e.message);
+  document.body.innerHTML += '<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#400;color:#fff;padding:20px;border-radius:8px;z-index:999;font-size:16px;">⚠ 游戏加载失败：' + e.message + '<br>请检查文件是否完整</div>';
+}
+</script>
+</body>
+</html>
